@@ -84,7 +84,7 @@ def evaluate(stdout, submit_fname,
                 # exactly one test case for each user_id
                 answers[phase_id][user_id] = (item_id, item_degree)
     except Exception as _:
-        return report_error(stdout, 'server-side error: answer file incorrect')
+        return 'server-side error: answer file incorrect'
 
     try:
         predictions = {}
@@ -96,16 +96,15 @@ def evaluate(stdout, submit_fname,
                 line = line.split(',')
                 user_id = int(line[0])
                 if user_id in predictions:
-                    return report_error(stdout, 'submitted duplicate user_ids')
+                    return 'submitted duplicate user_ids'
                 item_ids = [int(i) for i in line[1:]]
                 if len(item_ids) != 50:
-                    return report_error(stdout, 'each row need have 50 items')
+                    return 'each row need have 50 items'
                 if len(set(item_ids)) != 50:
-                    return report_error(
-                        stdout, 'each row need have 50 DISTINCT items')
+                    return 'each row need have 50 DISTINCT items'
                 predictions[user_id] = item_ids
     except Exception as _:
-        return report_error(stdout, 'submission not in correct format')
+        return 'submission not in correct format'
 
     scores = np.zeros(4, dtype=np.float32)
 
@@ -118,19 +117,20 @@ def evaluate(stdout, submit_fname,
     for phase_id in range(phase_beg, phase_end):
         for user_id in answers[phase_id]:
             if user_id not in predictions:
-                return report_error(
-                    stdout, 'user_id %d of phase %d not in submission' % (
-                        user_id, phase_id))
+                return 'user_id %d of phase %d not in submission' % (user_id, phase_id)
         try:
             # We sum the scores from all the phases, instead of averaging them.
             scores += evaluate_each_phase(predictions, answers[phase_id])
         except Exception as _:
-            return report_error(stdout, 'error occurred during evaluation')
+            return 'error occurred during evaluation'
 
-    return report_score(
-        stdout, score=float(scores[0]),
-        ndcg_50_full=float(scores[0]), ndcg_50_half=float(scores[1]),
-        hitrate_50_full=float(scores[2]), hitrate_50_half=float(scores[3]))
+    return {
+            'score': float(scores[0]),
+            'ndcg_50_full': float(scores[0]), 
+            'ndcg_50_half': float(scores[1]),
+            'hitrate_50_full': float(scores[2]),
+            'hitrate_50_half': float(scores[3])
+            }
 
 # FYI. You can create a fake answer file for validation based on this. For example,
 # you can mask the latest ONE click made by each user in underexpose_test_click-T.csv,
