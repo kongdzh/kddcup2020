@@ -2,6 +2,55 @@ import pandas as pd
 from tqdm import tqdm
 from collections import defaultdict
 import math
+from operator import itemgetter
+
+
+def UserSimilarity(train, user_col, item_col): 
+
+    train = train.copy()
+    user_item_ = train.groupby(user_col)[item_col].agg(list).reset_index()
+    user_item_dict = dict(zip(user_item_[user_col], user_item_[item_col]))
+    # build inverse table for item_users 
+    item_users = dict() 
+    for u, items in user_item_dict.items(): 
+        for i in items: 
+            if i not in item_users: 
+                item_users[i] = set() 
+            item_users[i].add(u) 
+    
+    #calculate co-rated items between users 
+    C = dict() 
+    N = dict() 
+    for i, users in item_users.items(): 
+        for u in users: 
+            if u not in N:
+                N.setdefault(u, 1)
+            N[u] += 1 
+            C.setdefault(u, {})
+            for v in users: 
+                if u == v: 
+                    continue 
+                C[u].setdefault(v, 0)
+                C[u][v] += 1 / math.log(1 + len(users)) 
+    #calculate finial similarity matrix W 
+    W = dict() 
+    for u, related_users in C.items():
+        W.setdefault(u, {}) 
+        for v, cuv in related_users.items(): 
+            W[u].setdefault(v, cuv / math.sqrt(N[u] * N[v])) 
+    return W
+
+def userRecommend(W, user_item_dict, user_id, K, item_num): 
+
+    rank = dict() 
+    interacted_items = user_item_dict[user_id] 
+    for v, wuv in sorted(W[user_id].items(), key=itemgetter(1), reverse=True)[0:K]: 
+        for i, rvi in user_item_dict[v].items(): 
+            if i in interacted_items: 
+                #we should filter items user interacted before 
+                continue 
+            rank[i] += wuv * rvi 
+    return sorted(rank.items(), key=lambda d: d[1], reverse=True)[:item_num]
 
 
 def get_sim_item(df_, user_col, item_col, use_iif=False): 
@@ -73,26 +122,33 @@ def get_predict(df, pred_col, top_fill):
     df = df.groupby('user_id')['item_id'].apply(lambda x: ','.join([str(i) for i in x])).str.split(',', expand=True).reset_index()  
     return df  
 
-now_phase = 3
-train_path = './data/underexpose_train'  
-test_path = './data/underexpose_test'  
+now_phase = 6
+train_path = 'E:\\CodeSleepEatRepeat\\data\\kddcup2020\\underexpose_train'  
+test_path = 'E:\\CodeSleepEatRepeat\\data\\kddcup2020\\underexpose_test'  
+new_train_path = 'E:\\CodeSleepEatRepeat\\data\\kddcup2020\\new_underexpose_train'  
+new_test_path = 'E:\\CodeSleepEatRepeat\\data\\kddcup2020\\new_underexpose_test'  
 recom_item = []  
 
 whole_click = pd.DataFrame()  
-for c in range(now_phase + 1):  
+for c in range(0, now_phase + 1):  
     print('phase:', c)  
-    click_train = pd.read_csv(train_path + '/underexpose_train_click-{}.csv'.format(c), header=None,  names=['user_id', 'item_id', 'time'])  
-    click_test = pd.read_csv(test_path + '/underexpose_test_click-{}.csv'.format(c,c), header=None,  names=['user_id', 'item_id', 'time'])  
+    click_train = pd.read_csv(new_train_path + '\\new_underexpose_train_click-{}.csv'.format(c), header=None,  names=['user_id', 'item_id', 'time'])  
+    click_test = pd.read_csv(new_test_path + '\\new_underexpose_test_click-{}\\new_underexpose_test_click-{}.csv'.format(c,c), header=None,  names=['user_id', 'item_id', 'time'])  
 
     all_click = click_train.append(click_test)  
     whole_click = whole_click.append(all_click)  
     whole_click = whole_click.drop_duplicates(subset=['user_id','item_id','time'],keep='last')
     whole_click = whole_click.sort_values('time')
 
-    item_sim_list, user_item = get_sim_item(whole_click, 'user_id', 'item_id', use_iif=False)  
+    item_sim_list, user_item = get_sim_item(whole_click, 'user_id', 'item_id', use_iif=False) 
+    W = UserSimilarity(whole_click, 'user_id', 'item_id')
 
     for i in tqdm(click_test['user_id'].unique()):  
+        print('item based cf')
         rank_item = recommend(item_sim_list, user_item, i, 500, 500)  
+        print('user based cf')
+        rank_user = userRecommend(W, user_item, i, 500, 500)
+        rank_item.update(rank_user)
         for j in rank_item:  
             recom_item.append([i, j[0], j[1]])  
             
@@ -102,4 +158,4 @@ top50_click = ','.join([str(i) for i in top50_click])
 
 recom_df = pd.DataFrame(recom_item, columns=['user_id', 'item_id', 'sim'])  
 result = get_predict(recom_df, 'sim', top50_click)  
-result.to_csv('baseline.csv', index=False, header=None)
+result.to_csv('new_baseline+usercf.csv', index=False, header=None)
